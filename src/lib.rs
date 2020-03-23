@@ -234,7 +234,7 @@ pub fn compile(glsl_path: &Path) -> Result<Vec<u8>, CompileError> {
     let shader_ty = glsl_path
         .extension()
         .and_then(|s| s.to_str())
-        .and_then(extension_to_shader_ty)
+        .and_then(ext_to_shader_ty)
         .expect("the given GLSL path was not a shader");
 
     // Compile to spirv.
@@ -257,7 +257,7 @@ pub fn compile_str(glsl_str: &str, shader_ty: ShaderType) -> Result<Vec<u8>, Com
 }
 
 /// Convert the given file extension to a shader type for `glsl_to_spirv` compilation.
-fn extension_to_shader_ty(ext: &str) -> Option<ShaderType> {
+pub fn ext_to_shader_ty(ext: &str) -> Option<ShaderType> {
     let ty = match ext {
         "vert" => glsl_to_spirv::ShaderType::Vertex,
         "frag" => glsl_to_spirv::ShaderType::Fragment,
