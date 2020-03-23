@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use thiserror::Error;
 
+pub use glsl_to_spirv::ShaderType;
+
 /// Watches one or more paths for changes to GLSL shader files.
 ///
 /// See the `watch` or `watch_paths` constructor functions.
@@ -233,11 +235,18 @@ pub fn compile(glsl_path: &Path) -> Result<Vec<u8>, CompileError> {
         .extension()
         .and_then(|s| s.to_str())
         .and_then(extension_to_shader_ty)
-        .expect("");
+        .expect("the given GLSL path was not a shader");
 
     // Compile to spirv.
     let glsl_string = std::fs::read_to_string(glsl_path)?;
-    let spirv_file = glsl_to_spirv::compile(&glsl_string, shader_ty)
+    compile_str(&glsl_string, shader_ty)
+}
+
+/// Compile the GLSL string to SPIR-V.
+///
+/// Returns a `Vec<u8>` containing raw SPIR-V bytes.
+pub fn compile_str(glsl_str: &str, shader_ty: ShaderType) -> Result<Vec<u8>, CompileError> {
+    let spirv_file = glsl_to_spirv::compile(glsl_str, shader_ty)
         .map_err(|err| CompileError::GlslToSpirv { err })?;
 
     // Read generated file to bytes.
@@ -248,7 +257,7 @@ pub fn compile(glsl_path: &Path) -> Result<Vec<u8>, CompileError> {
 }
 
 /// Convert the given file extension to a shader type for `glsl_to_spirv` compilation.
-fn extension_to_shader_ty(ext: &str) -> Option<glsl_to_spirv::ShaderType> {
+fn extension_to_shader_ty(ext: &str) -> Option<ShaderType> {
     let ty = match ext {
         "vert" => glsl_to_spirv::ShaderType::Vertex,
         "frag" => glsl_to_spirv::ShaderType::Fragment,
