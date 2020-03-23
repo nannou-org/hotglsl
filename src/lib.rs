@@ -16,7 +16,7 @@ use thiserror::Error;
 pub struct Watch {
     event_rx: mpsc::Receiver<notify::Result<notify::Event>>,
     pending_paths: RefCell<Vec<PathBuf>>,
-    _watchers: Vec<notify::RecommendedWatcher>,
+    _watcher: notify::RecommendedWatcher,
     _watched_paths: Vec<PathBuf>,
 }
 
@@ -168,20 +168,17 @@ where
     let (tx, event_rx) = mpsc::channel();
 
     // Create a watcher for each path.
-    let mut watchers = vec![];
     let mut watched_paths = vec![];
+    let mut watcher = notify::RecommendedWatcher::new_immediate(move |res| {
+        tx.send(res).ok();
+    })?;
     for path in paths {
         let path = path.as_ref().to_path_buf();
-        let tx = tx.clone();
-        let mut watcher = notify::RecommendedWatcher::new_immediate(move |res| {
-            tx.send(res).ok();
-        })?;
         if path.is_dir() {
             watcher.watch(&path, notify::RecursiveMode::Recursive)?;
         } else {
             watcher.watch(&path, notify::RecursiveMode::NonRecursive)?;
         }
-        watchers.push(watcher);
         watched_paths.push(path);
     }
 
@@ -189,7 +186,7 @@ where
     Ok(Watch {
         event_rx,
         pending_paths,
-        _watchers: watchers,
+        _watcher: watcher,
         _watched_paths: watched_paths,
     })
 }
