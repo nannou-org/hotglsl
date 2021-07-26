@@ -171,7 +171,7 @@ where
 
     // Create a watcher for each path.
     let mut watched_paths = vec![];
-    let mut watcher = notify::RecommendedWatcher::new_immediate(move |res| {
+    let mut watcher = notify::recommended_watcher(move |res| {
         tx.send(res).ok();
     })?;
     for path in paths {
