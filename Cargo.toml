@@ -1,6 +1,6 @@
 [package]
 name = "hotglsl"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["mitchmindtree <mitchell.nordine@gmail.com>"]
 description = "A simple crate for hotloading GLSL shaders as SPIR-V."
 readme = "README.md"
@@ -11,6 +11,6 @@ homepage = "https://github.com/nannou-org/hotglsl"
 edition = "2018"
 
 [dependencies]
-glsl-to-spirv = "0.1.7"
-notify = "=5.0.0-pre.11"
+naga = { version = "0.14", features = ["glsl-in", "spv-out"] }
+notify = "6"
 thiserror = "1"

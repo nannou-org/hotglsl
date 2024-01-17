@@ -2,15 +2,13 @@
 //!
 //! See the `watch` function.
 
+pub use naga::ShaderStage;
 use notify::{self, Watcher};
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use thiserror::Error;
-
-pub use glsl_to_spirv::ShaderType;
 
 /// Watches one or more paths for changes to GLSL shader files.
 ///
@@ -62,9 +60,45 @@ pub enum CompileError {
         #[from]
         err: std::io::Error,
     },
-    #[error("an error occurred during `glsl_to_spirv::compile`: {err}")]
-    GlslToSpirv { err: String },
+    #[error("an error occurred compiling glsl to spir-v: {err}")]
+    GlslToSpirv {
+        #[from]
+        err: NagaError,
+    },
 }
+
+#[derive(Debug, Error)]
+pub enum NagaError {
+    #[error("failed to construct a naga module from GLSL: {err}")]
+    Front {
+        #[from]
+        err: NagaFrontError,
+    },
+    #[error("validation failed: {err}")]
+    Validation {
+        #[from]
+        err: naga::WithSpan<naga::valid::ValidationError>,
+    },
+    #[error("spir-v generation failed: {err}")]
+    Back {
+        #[from]
+        err: naga::back::spv::Error,
+    },
+}
+
+#[derive(Debug)]
+pub struct NagaFrontError(Vec<naga::front::glsl::Error>);
+
+impl std::fmt::Display for NagaFrontError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        for e in &self.0 {
+            e.fmt(f)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for NagaFrontError {}
 
 /// The list of extensions that are considered valid shader extensions.
 ///
@@ -245,26 +279,40 @@ pub fn compile(glsl_path: &Path) -> Result<Vec<u8>, CompileError> {
 /// Compile the GLSL string to SPIR-V.
 ///
 /// Returns a `Vec<u8>` containing raw SPIR-V bytes.
-pub fn compile_str(glsl_str: &str, shader_ty: ShaderType) -> Result<Vec<u8>, CompileError> {
-    let spirv_file = glsl_to_spirv::compile(glsl_str, shader_ty)
-        .map_err(|err| CompileError::GlslToSpirv { err })?;
-
-    // Read generated file to bytes.
-    let mut buf_reader = std::io::BufReader::new(spirv_file);
-    let mut spirv_bytes = vec![];
-    buf_reader.read_to_end(&mut spirv_bytes)?;
-    Ok(spirv_bytes)
+pub fn compile_str(glsl_str: &str, stage: ShaderStage) -> Result<Vec<u8>, CompileError> {
+    let mut frontend = naga::front::glsl::Frontend::default();
+    let opts = naga::front::glsl::Options::from(stage);
+    let module = frontend
+        .parse(&opts, glsl_str)
+        .map_err(NagaFrontError)
+        .map_err(|err| NagaError::Front { err })?;
+    let flags = naga::valid::ValidationFlags::default();
+    let caps = naga::valid::Capabilities::all();
+    let info = naga::valid::Validator::new(flags, caps)
+        .validate(&module)
+        .map_err(|err| NagaError::Validation { err })?;
+    let opts = naga::back::spv::Options::default();
+    let pl_opts = None;
+    let spv_words = naga::back::spv::write_vec(&module, &info, &opts, pl_opts)
+        .map_err(|err| NagaError::Back { err })?;
+    let spv_bytes = spv_words
+        .iter()
+        .fold(Vec::with_capacity(spv_words.len() * 4), |mut v, w| {
+            v.extend_from_slice(&w.to_le_bytes());
+            v
+        });
+    Ok(spv_bytes)
 }
 
 /// Convert the given file extension to a shader type for `glsl_to_spirv` compilation.
-pub fn ext_to_shader_ty(ext: &str) -> Option<ShaderType> {
+pub fn ext_to_shader_ty(ext: &str) -> Option<ShaderStage> {
     let ty = match ext {
-        "vert" => glsl_to_spirv::ShaderType::Vertex,
-        "frag" => glsl_to_spirv::ShaderType::Fragment,
-        "comp" => glsl_to_spirv::ShaderType::Compute,
-        "vs" => glsl_to_spirv::ShaderType::Vertex,
-        "fs" => glsl_to_spirv::ShaderType::Fragment,
-        "cs" => glsl_to_spirv::ShaderType::Compute,
+        "vert" => ShaderStage::Vertex,
+        "frag" => ShaderStage::Fragment,
+        "comp" => ShaderStage::Compute,
+        "vs" => ShaderStage::Vertex,
+        "fs" => ShaderStage::Fragment,
+        "cs" => ShaderStage::Compute,
         _ => return None,
     };
     Some(ty)
