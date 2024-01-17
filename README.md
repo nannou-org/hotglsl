@@ -35,5 +35,5 @@ See the `GLSL_EXTENSIONS` const for supported GLSL extensions that will be
 watched. A `hotglsl::Watch` will ignore all events that don't involve a file
 with one of these extensions.
 
-Uses the `notify` crate for file system events and the `glsl-to-spirv` crate for
+Uses the `notify` crate for file system events and the `naga` crate for
 GLSL->SPIR-V compilation.
